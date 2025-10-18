@@ -1,11 +1,14 @@
 ﻿package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib" // Наш "переводчик"
 )
 
 type Task struct {
@@ -36,7 +39,7 @@ func tasksHandler(w http.ResponseWriter, r *http.Request) {
 		var newTask Task
 		err := json.NewDecoder(r.Body).Decode(&newTask)
 		if err != nil {
-			http.Error(w, "It's not a JSON", http.StatusInternalServerError)
+			http.Error(w, "It's not a JSON", http.StatusBadRequest)
 			return
 		} else {
 			newTask.Id = dataBase[len(dataBase)-1].Id + 1
@@ -58,10 +61,40 @@ func tasksHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	connStr := "postgres://myuser:mypassword@localhost:5432/mydb?sslmode=disable"
+	// 2. Открываем "пул" соединений
+	db, err := sql.Open("pgx", connStr)
+	if err != nil {
+		log.Fatalf("Не удалось подключиться к базе данных: %v", err)
+	}
+	defer db.Close() // Гарантирует, что соединение закроется при выходе из main
+
+	// 3. Проверяем, что соединение живое
+	err = db.Ping()
+	if err != nil {
+		log.Fatalf("База данных недоступна: %v", err)
+	}
+
+	fmt.Println("База данных успешно подключена!")
+
+	// --- КОНЕЦ НОВОГО КОДА ---
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS tasks (
+		id SERIAL PRIMARY KEY,
+		title TEXT,
+		is_ok BOOLEAN
+	);`
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		log.Fatalf("Не удалось создать таблицу: %v", err)
+	}
+
+	fmt.Println("Таблица 'tasks' готова к работе.")
+
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/time", timeHandler)
 	http.HandleFunc("/tasks", tasksHandler)
-	err := http.ListenAndServe(":8080", nil)
+	err = http.ListenAndServe(":8080", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
